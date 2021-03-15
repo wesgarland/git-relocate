@@ -114,7 +114,7 @@ fi
 
 [ "$DRY_RUN" ] && exit $EXIT_CODE
 
-cd "${destRepo}" && git am --committer-date-is-author-date < ${patchFile}
+cd "${destRepo}" && git am --committer-date-is-author-date --whitespace=nowarn < ${patchFile}
 
 if [ "$?" != "0" ]; then
   echo "Error applying patch for `emitPaths $@` in ${destRepo}; exit"
