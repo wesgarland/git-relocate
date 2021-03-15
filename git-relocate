@@ -43,48 +43,85 @@ do
   fi
 done
 
-# Emit and apply one patch per source file|dir
-while [ "$2" ];
-do
-  cd "$runDir"
-  srcFull=`realpath "$1"`
-  shift
+cd "$runDir" && srcRepo=`git rev-parse --show-toplevel`
+if [ ! "$srcRepo" ] || [ ! -f "$srcRepo/.git/HEAD" ]; then
+  echo "Could not locate git repository for $runDir" >&2
+  exit 2
+fi
 
-  cd `dirname "$srcFull"` && srcRepo=`git rev-parse --show-toplevel`
-  src=`realpath --relative-to="$srcRepo" "$srcFull"`
-  if [ ! -f "$srcRepo/.git/HEAD" ]; then
-    echo "Error: could not determine git repository for '$srcFull'; skipping" >&2
-    EXIT_CODE=2      
-    continue
-  fi
+# Validate source files|dirs in argv
+(
+  while [ "$2" ];
+  do
+    cd "$runDir"
+    srcFull=`realpath "$1"`
+    cd `dirname "$srcFull"` && src=`realpath --relative-to="$srcRepo" "$srcFull"`
+    shift
+    if [ ! "$src" ] || [ ! -e "$srcRepo/$src" ]; then
+        echo "Error: could not locate $srcFull in $srcRepo ($src); skipping" >&2
+        EXIT_CODE=2      
+    fi
+  done
+)
 
-  echo "creating patch for ${src}, ${srcRepo} -> ${destRepo}"
+# Emit the list of path specs in argv
+emitPaths()
+{
+  while [ "$2" ];
+  do
+    cd "$runDir"
+    srcFull=`realpath "$1"`
+    cd `dirname "$srcFull"` && src=`realpath --relative-to="$srcRepo" "$srcFull"`
+    shift
+    if [ ! "$src" ] || [ ! -e "$srcRepo/$src" ]; then
+      continue
+    fi
+    echo "$src"
+  done
+}
 
-  cd "$srcRepo"
+# Emit the list of files in argv
+emitFlist()
+{
+  emitPaths $@ \
+  | while read file;
+    do
+      git ls-files --error-unmatch "$file" 2>/dev/null
+    done
+}
 
-  opts=""
-  [ -f "$src" ] && opts="$opts --follow"
-  git log $opts --name-only --pretty="format:" --follow  "${src}" \
-      | sort -u \
-      | xargs git log --follow --pretty=email --patch-with-stat --reverse --full-index --binary -m --first-parent -- > "${destRepo}/_patch_"
+if [ "$GIT_RELOCATE_DEBUG_PATCH" ]; then
+  patchFile="_patch_"
+else
+  patchFile="_git_relocate_$$.patch"
+  trap "rm \"${destRepo}/${patchFile}\" 2>/dev/null" EXIT
+fi
 
-  if [ "$?" != "0" ]; then
-    echo "Error: could not generate patch"
-    EXIT_CODE=2
-    rm "${destRepo}/_patch_"
-  fi
-  [ "$DRY_RUN" ] && continue
+cd "$srcRepo"
+echo "creating patch for ${srcRepo} -> ${destRepo}"
+emitFlist $@ | sed 's/^/ - /'
+[ ! "$GIT_RELOCATE_NO_FOLLOW" ] && [ -f "$src" ] && [ ! "$3" ] && follow="--follow"
 
-  cd "${destRepo}" && git am --committer-date-is-author-date < _patch_
+git log --name-only --pretty="format:" --follow `emitPaths $@` \
+| sort -u \
+| xargs git log $follow --pretty=email --patch-with-stat --reverse --full-index --binary -m --first-parent -- \
+> "${destRepo}/${patchFile}"
 
-  if [ "$?" != "0" ]; then
-    echo "Error applying patch for ${src} in ${dest}; exit"
-    exit 3
-  fi
+if [ "$?" != "0" ]; then
+  echo "Error: could not generate patch"
+  exit 2
+fi
 
-  cd "$srcRepo"
-  git rm -r "$src"
-  rm ${destRepo}/_patch_
-done
+[ "$DRY_RUN" ] && exit $EXIT_CODE
+
+cd "${destRepo}" && git am --committer-date-is-author-date < ${patchFile}
+
+if [ "$?" != "0" ]; then
+  echo "Error applying patch for `emitPaths $@` in ${destRepo}; exit"
+  exit 3
+fi
+
+cd "$srcRepo"
+git rm -r `emitPaths $@`
 
 exit $EXIT_CODE
