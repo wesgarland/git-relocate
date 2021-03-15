@@ -1,0 +1,90 @@
+#! /bin/bash
+#
+# @file         git-mv
+#               Move files and/or directories from one git repository to another, preserving history.
+#               Based on ideas in https://gist.githubusercontent.com/tsayen/f1c1c4d62d4fda77abf1586bd39f9b74/raw/14adc4eb001be79c58680853226144f894815ba7/git-move.sh
+#
+#               Note: diff.context cannot be set to 0 in ~/.gitconfig or this script will fail
+#
+# @author       Wes Garland, wes@kingsds.network
+# @date         March 2021
+#
+
+[ ! "$2" -o "$1" = "-h" ] && cat <<EOF && exit 1
+Usage: $0 [--dry-run] path/to/file/or/dir [path/to/file/or/dir ...] path/to/destination/repo
+EOF
+runDir=`pwd`
+
+EXIT_CODE=0
+if [ "$1" = "--dry-run" ]; then
+  DRY_RUN=1
+  shift
+fi
+
+# Sort out target repo
+destFull="`realpath ${@: -1}`"
+if [ ! -d "$destFull" ]; then
+  echo "${@: -1} is not a directory"
+  exit 1
+fi
+cd "$destFull" && destRepo=`git rev-parse --show-toplevel`
+if [ ! -f "$destRepo/.git/HEAD" ]; then
+  echo "Error: could not determine git repository for '$destFull'; exit" >&2
+  exit 1
+fi
+
+# Check that everything exists
+cd "$runDir"
+for check in $*
+do
+  if [ ! -e "$check" ]; then
+    echo "Could not locate '$check'"
+    exit 1
+  fi
+done
+
+# Emit and apply one patch per source file|dir
+while [ "$2" ];
+do
+  cd "$runDir"
+  srcFull=`realpath "$1"`
+  shift
+
+  cd `dirname "$srcFull"` && srcRepo=`git rev-parse --show-toplevel`
+  src=`realpath --relative-to="$srcRepo" "$srcFull"`
+  if [ ! -f "$srcRepo/.git/HEAD" ]; then
+    echo "Error: could not determine git repository for '$srcFull'; skipping" >&2
+    EXIT_CODE=2      
+    continue
+  fi
+
+  echo "creating patch for ${src}, ${srcRepo} -> ${destRepo}"
+
+  cd "$srcRepo"
+
+  opts=""
+  [ -f "$src" ] && opts="$opts --follow"
+  git log $opts --name-only --pretty="format:" --follow  "${src}" \
+      | sort -u \
+      | xargs git log --follow --pretty=email --patch-with-stat --reverse --full-index --binary -m --first-parent -- > "${destRepo}/_patch_"
+
+  if [ "$?" != "0" ]; then
+    echo "Error: could not generate patch"
+    EXIT_CODE=2
+    rm "${destRepo}/_patch_"
+  fi
+  [ "$DRY_RUN" ] && continue
+
+  cd "${destRepo}" && git am --committer-date-is-author-date < _patch_
+
+  if [ "$?" != "0" ]; then
+    echo "Error applying patch for ${src} in ${dest}; exit"
+    exit 3
+  fi
+
+  cd "$srcRepo"
+  git rm -r "$src"
+  rm ${destRepo}/_patch_
+done
+
+exit $EXIT_CODE
