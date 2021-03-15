@@ -10,7 +10,9 @@ Stick this script somewhere in your path. If you cloned the repo and use a link,
 
 ## Usage
 
-```git-relocate [--dry-run] path/to/file/or/dir [path/to/file/or/dir ...] path/to/destination/repo```
+```
+git-relocate [--dry-run] path/to/file/or/dir [path/to/file/or/dir ...] path/to/destination/repo
+```
 
 --dry-run, if used, must be the first argument. It will cause this script to produce output as though it was working, but it will not modify your git repositories.
 
@@ -28,7 +30,8 @@ _*All source files must belong to the same git repository.*_
 
 ### Example
 
-```[~/git/dcp-worker] wes-linux-kds:wes# git-relocate --dry-run lib ../dcp-client
+```
+[~/git/dcp-worker] wes-linux-kds:wes# git-relocate --dry-run lib ../dcp-client
 creating patch for /home/wes/git/dcp-worker -> /home/wes/git/dcp-client
  - lib/bindToTestHarness.js
  - lib/blessed-components/index.js
@@ -45,6 +48,8 @@ creating patch for /home/wes/git/dcp-worker -> /home/wes/git/dcp-client
 ```
 
 ## What To Do If Something Goes Wrong
-- Setting the environment variable GIT_RELOCATE_DEBUG_PATCH will leave the patch behind in the target directory as `_patch`.
+- Setting the environment variable GIT_RELOCATE_DEBUG_PATCH will leave the patch behind in the target directory as `_patch_`.
 
 If you see the error `fatal: previous rebase directory .git/rebase-apply still exists but mbox given.`, you may need to reset your target repository with `git am --abort`.
+
+Warnings relating to errors are not uncommon, and can be ignored.
