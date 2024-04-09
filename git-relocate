@@ -118,6 +118,7 @@ cd "${destRepo}" && git am --committer-date-is-author-date --whitespace=nowarn <
 
 if [ "$?" != "0" ]; then
   echo "Error applying patch for `emitPaths $@` in ${destRepo}; exit"
+  cd "${destRepo}" && git am --abort
   exit 3
 fi
 
